@@ -29,10 +29,57 @@ const COUNTRY_CODES = [
   { code: "65", label: "Singapore (+65)", flag: "🇸🇬" },
 ];
 
+function getInitialUser(): AuthUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const storedUser = localStorage.getItem("wapix_auth_user");
+    if (storedUser) {
+      const parsed = JSON.parse(storedUser);
+      if (parsed?.phone) return parsed;
+    }
+  } catch (e) {
+    console.error("Failed to parse stored user", e);
+  }
+  return null;
+}
+
+function getInitialTodos(userPhone?: string): TodoItem[] {
+  if (typeof window === "undefined" || !userPhone) return [];
+  try {
+    const key = `wapix_todos_${userPhone}`;
+    const saved = localStorage.getItem(key);
+    if (saved) return JSON.parse(saved);
+
+    // Initial default welcome tasks
+    const initialTodos: TodoItem[] = [
+      {
+        id: "welcome-1",
+        title: "Welcome to Wapix Todo Manager!",
+        notes: "Your tasks are saved securely in your browser's localStorage.",
+        completed: false,
+        priority: "medium",
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: "welcome-2",
+        title: "Create your first custom task",
+        notes: "Type above and press Enter or click 'Add Task'.",
+        completed: false,
+        priority: "high",
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    localStorage.setItem(key, JSON.stringify(initialTodos));
+    return initialTodos;
+  } catch (e) {
+    console.error("Failed to load initial todos", e);
+    return [];
+  }
+}
+
 export default function Home() {
-  // Auth state
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [authChecking, setAuthChecking] = useState(true);
+  // Auth state initialized directly without cascading useEffect renders
+  const [user, setUser] = useState<AuthUser | null>(getInitialUser);
 
   // Login form state
   const [countryCode, setCountryCode] = useState("91");
@@ -51,8 +98,8 @@ export default function Home() {
   } | null>(null);
   const [countdown, setCountdown] = useState(0);
 
-  // Todo state
-  const [todos, setTodos] = useState<TodoItem[]>([]);
+  // Todo state initialized with user context
+  const [todos, setTodos] = useState<TodoItem[]>(() => getInitialTodos(user?.phone));
   const [todoTitle, setTodoTitle] = useState("");
   const [todoNotes, setTodoNotes] = useState("");
   const [todoPriority, setTodoPriority] = useState<"low" | "medium" | "high">("medium");
@@ -68,62 +115,6 @@ export default function Home() {
   const [editTitle, setEditTitle] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editPriority, setEditPriority] = useState<"low" | "medium" | "high">("medium");
-
-  // Load auth from localStorage on initial render
-  useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem("wapix_auth_user");
-      if (storedUser) {
-        const parsed = JSON.parse(storedUser);
-        if (parsed?.phone) {
-          setUser(parsed);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to parse stored user", e);
-    } finally {
-      setAuthChecking(false);
-    }
-  }, []);
-
-  // Load todos whenever user changes
-  useEffect(() => {
-    if (!user) {
-      setTodos([]);
-      return;
-    }
-    try {
-      const key = `wapix_todos_${user.phone}`;
-      const savedTodos = localStorage.getItem(key);
-      if (savedTodos) {
-        setTodos(JSON.parse(savedTodos));
-      } else {
-        // If empty, provide a clean welcome task
-        const initialTodos: TodoItem[] = [
-          {
-            id: "welcome-1",
-            title: "Welcome to Wapix Todo Manager!",
-            notes: "Your tasks are saved securely in your browser's localStorage.",
-            completed: false,
-            priority: "medium",
-            createdAt: new Date().toISOString(),
-          },
-          {
-            id: "welcome-2",
-            title: "Create your first custom task",
-            notes: "Type above and press Enter or click 'Add Task'.",
-            completed: false,
-            priority: "high",
-            createdAt: new Date().toISOString(),
-          },
-        ];
-        setTodos(initialTodos);
-        localStorage.setItem(key, JSON.stringify(initialTodos));
-      }
-    } catch (e) {
-      console.error("Failed to load todos from localStorage", e);
-    }
-  }, [user]);
 
   // Sync todos to localStorage on change
   const syncTodosToStorage = (updatedTodos: TodoItem[]) => {
@@ -231,6 +222,10 @@ export default function Home() {
       localStorage.setItem("wapix_auth_user", JSON.stringify(authenticatedUser));
       setUser(authenticatedUser);
 
+      // Load or initialize user's to-do list
+      const userTodos = getInitialTodos(authenticatedUser.phone);
+      setTodos(userTodos);
+
       // Reset login form fields
       setPhone("");
       setOtp("");
@@ -255,6 +250,7 @@ export default function Home() {
     if (confirm("Are you sure you want to log out?")) {
       localStorage.removeItem("wapix_auth_user");
       setUser(null);
+      setTodos([]);
       setLoginStep("phone");
       setOtp("");
       setPhone("");
@@ -374,17 +370,6 @@ export default function Home() {
     const percentage = total === 0 ? 0 : Math.round((completed / total) * 100);
     return { total, completed, pending, percentage };
   }, [todos]);
-
-  if (authChecking) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0b0f14]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-3 border-emerald-500/30 border-t-emerald-400 rounded-full animate-spin" />
-          <span className="text-xs font-mono text-slate-400">Loading Wapix workspace...</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#0b0f14] text-slate-100 flex flex-col selection:bg-emerald-500/20 selection:text-emerald-400">
